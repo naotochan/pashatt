@@ -251,7 +251,7 @@ export default function Settings() {
                     }}
                     className="px-3 py-1.5 rounded-lg text-sm bg-tb-raised border border-tb-border text-tb-text hover:bg-tb-hover transition-colors"
                   >
-                    Check for Updates… / アップデートを確認…
+                    Check for Updates…
                   </button>
                 </SettingRow>
               </Section>
