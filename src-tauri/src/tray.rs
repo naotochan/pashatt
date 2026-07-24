@@ -77,7 +77,7 @@ fn build_menu(app: &AppHandle) -> Result<Menu<tauri::Wry>, tauri::Error> {
     let check_updates = MenuItem::with_id(
         app,
         "check_updates",
-        "Check for Updates… / アップデートを確認…",
+        "Check for Updates…",
         true,
         None::<&str>,
     )?;
