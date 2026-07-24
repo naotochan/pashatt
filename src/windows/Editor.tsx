@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback, useMemo } from "react";
-import { onCaptureComplete, getSettings, saveSettings } from "../lib/ipc";
+import { onCaptureComplete, getSettings, saveSettings, notifyEditorHidden } from "../lib/ipc";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Toolbar from "../components/Toolbar";
 import { BrushCursor } from "../components/editor/BrushCursor";
@@ -143,7 +143,7 @@ export default function Editor() {
     win
       .onCloseRequested((event) => {
         event.preventDefault();
-        win.hide();
+        void win.hide().then(() => notifyEditorHidden());
       })
       .then((fn) => {
         unlisten = fn;

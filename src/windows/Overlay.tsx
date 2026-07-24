@@ -18,15 +18,40 @@ interface DragState {
   endY: number;
 }
 
-/**
- * macOS の transparent NSWindow は alpha≈0 の画素をクリックスルーする。
- * clearRect の代わりに極小 alpha で塗り、見た目は通しつつヒットを確保する。
- */
-const HIT_CUTOUT = "rgba(0, 0, 0, 0.01)";
+/** 選択範囲の内側だけ白く薄く覆う */
+const SELECTION_FILL = "rgba(255, 255, 255, 0.35)";
+const SELECTION_BORDER = "rgba(255, 255, 255, 0.95)";
+const SELECTION_BORDER_SHADOW = "rgba(0, 0, 0, 0.35)";
 
-function cutOut(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number) {
-  ctx.fillStyle = HIT_CUTOUT;
+function fillSelection(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number
+) {
+  if (w <= 0 || h <= 0) return;
+  ctx.fillStyle = SELECTION_FILL;
   ctx.fillRect(x, y, w, h);
+}
+
+function strokeSelection(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  lineWidth = 1.5
+) {
+  const inset = lineWidth / 2;
+  const sw = Math.max(0, w - lineWidth);
+  const sh = Math.max(0, h - lineWidth);
+  ctx.lineWidth = lineWidth + 1;
+  ctx.strokeStyle = SELECTION_BORDER_SHADOW;
+  ctx.strokeRect(x + inset, y + inset, sw, sh);
+  ctx.lineWidth = lineWidth;
+  ctx.strokeStyle = SELECTION_BORDER;
+  ctx.strokeRect(x + inset, y + inset, sw, sh);
 }
 
 function hitTestFrontmost(
@@ -100,20 +125,14 @@ export default function Overlay() {
     const win = hoveredWinRef.current;
 
     if (currentMode === "region") {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
-      ctx.fillRect(0, 0, W, H);
-
       if (drag) {
         const x = Math.min(drag.startX, drag.endX);
         const y = Math.min(drag.startY, drag.endY);
         const w = Math.abs(drag.endX - drag.startX);
         const h = Math.abs(drag.endY - drag.startY);
 
-        cutOut(ctx, x, y, w, h);
-
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(x + 0.75, y + 0.75, Math.max(0, w - 1.5), Math.max(0, h - 1.5));
+        fillSelection(ctx, x, y, w, h);
+        strokeSelection(ctx, x, y, w, h);
 
         if (w > 60 && h > 20) {
           const label = `${Math.round(w)} × ${Math.round(h)}`;
@@ -133,33 +152,24 @@ export default function Overlay() {
         }
       }
     } else if (currentMode === "window") {
-      // 暗幕 + ホバー窓の「見えている部分」だけカットアウト + 枠
-      // 背面窓をホバーしたとき、前面で隠れている領域は暗幕のままにする
-      const dim = "rgba(0, 0, 0, 0.4)";
-      ctx.fillStyle = dim;
-      ctx.fillRect(0, 0, W, H);
-
+      // ホバー中の窓だけ白くハイライト。前面窓に隠れた部分は塗らない
       if (win) {
         const { x, y, w, h } = win;
-        cutOut(ctx, x, y, w, h);
+        fillSelection(ctx, x, y, w, h);
 
         const wins = windowsRef.current;
         const idx = wins.findIndex((winfo) => winfo.id === win.id);
-        // リスト上で手前にある窓との重なりを再暗幕（背面ホバー時に前面が明るく残らないように）
         if (idx > 0) {
           for (let i = 0; i < idx; i++) {
             const front = wins[i];
             const overlap = rectIntersection(x, y, w, h, front.x, front.y, front.w, front.h);
             if (overlap) {
-              ctx.fillStyle = dim;
-              ctx.fillRect(overlap.x, overlap.y, overlap.w, overlap.h);
+              ctx.clearRect(overlap.x, overlap.y, overlap.w, overlap.h);
             }
           }
         }
 
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.95)";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x + 1, y + 1, Math.max(0, w - 2), Math.max(0, h - 2));
+        strokeSelection(ctx, x, y, w, h, 2);
       }
     }
   }, []);

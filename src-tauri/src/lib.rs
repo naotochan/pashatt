@@ -61,11 +61,7 @@ async fn show_overlay(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn hide_overlay(app: AppHandle) -> Result<(), String> {
     hide_overlay_hard(&app);
-    #[cfg(target_os = "macos")]
-    {
-        // キャプチャ UI を閉じたら Dock 非表示の Accessory に戻す
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-    }
+    set_accessory_policy(&app);
     Ok(())
 }
 
@@ -220,14 +216,33 @@ async fn check_for_updates_cmd(app: AppHandle) -> Result<(), String> {
 // ヘルパー
 // ============================================================
 
+#[cfg(target_os = "macos")]
+fn set_accessory_policy(app: &AppHandle) {
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_accessory_policy(_app: &AppHandle) {}
+
+#[cfg(target_os = "macos")]
+fn set_regular_policy(app: &AppHandle) {
+    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_regular_policy(_app: &AppHandle) {}
+
+#[tauri::command]
+fn editor_hidden(app: AppHandle) {
+    set_accessory_policy(&app);
+}
+
 fn open_editor_with_image(app: &AppHandle, b64: String, width: u32, height: u32) {
     hide_overlay_hard(app);
-    #[cfg(target_os = "macos")]
-    {
-        // エディタにフォーカスを渡してオーバーレイ残像を消す
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    }
+    // Accessory のままだと前面に出ず他ウィンドウの裏に回る
+    set_regular_policy(app);
     if let Some(win) = app.get_webview_window("editor") {
+        let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
         let payload = serde_json::json!({
@@ -236,10 +251,6 @@ fn open_editor_with_image(app: &AppHandle, b64: String, width: u32, height: u32)
             "height": height,
         });
         let _ = win.emit("capture-complete", payload);
-    }
-    #[cfg(target_os = "macos")]
-    {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Accessory);
     }
 }
 
@@ -289,11 +300,7 @@ fn fit_overlay_to_screen(app: &AppHandle, win: &tauri::WebviewWindow) {
 /// オーバーレイを前面に出し、キー入力を受け取れる状態にする
 fn show_overlay_window(app: &AppHandle) {
     // Accessory のままだと最初のクリックがアクティベート専用で消費されがち。
-    // 一時的に Regular にしてフォーカスを確実に取る。
-    #[cfg(target_os = "macos")]
-    {
-        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    }
+    set_regular_policy(app);
     if let Some(win) = app.get_webview_window("overlay") {
         fit_overlay_to_screen(app, &win);
         let _ = win.set_always_on_top(true);
@@ -312,7 +319,9 @@ pub async fn trigger_capture(app: &AppHandle) {
 }
 
 pub fn show_settings_window(app: &AppHandle) {
+    set_regular_policy(app);
     if let Some(win) = app.get_webview_window("settings") {
+        let _ = win.unminimize();
         let _ = win.show();
         let _ = win.set_focus();
     }
@@ -393,6 +402,7 @@ pub fn run() {
             open_system_preferences,
             open_accessibility_preferences,
             check_for_updates_cmd,
+            editor_hidden,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

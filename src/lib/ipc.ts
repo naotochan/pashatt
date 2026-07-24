@@ -47,6 +47,8 @@ export const showOverlay = (): Promise<void> => invoke("show_overlay");
 
 export const hideOverlay = (): Promise<void> => invoke("hide_overlay");
 
+export const notifyEditorHidden = (): Promise<void> => invoke("editor_hidden");
+
 export const captureRegion = (
   x: number,
   y: number,

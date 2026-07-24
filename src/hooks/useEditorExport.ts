@@ -1,5 +1,5 @@
 import { useCallback, type RefObject } from "react";
-import { copyToClipboard, getSettings, saveImage } from "../lib/ipc";
+import { copyToClipboard, getSettings, saveImage, notifyEditorHidden } from "../lib/ipc";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 interface BackgroundState {
@@ -111,7 +111,11 @@ export function useEditorExport({
 
       await saveImage(b64, fullPath);
       setStatus(`${t("Saved", "保存しました")}: ${fullPath}`);
-      setTimeout(() => getCurrentWindow().hide(), 500);
+      setTimeout(() => {
+        void getCurrentWindow()
+          .hide()
+          .then(() => notifyEditorHidden());
+      }, 500);
     } catch (err) {
       setStatus(`${t("Save failed", "保存に失敗しました")}: ${err}`);
       setTimeout(() => setStatus(editing), 3000);
