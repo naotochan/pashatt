@@ -58,11 +58,40 @@ export function sizeControlLabel(
   }
 }
 
+/**
+ * スライダー値がそのまま実効 px になるツールだけ `px` 単位を名乗れる。
+ * ハイライト／文字／モザイクの値は倍率であって px ではない。
+ */
+export function isSizeInPixels(tool: Tool): boolean {
+  return tool !== "text" && tool !== "highlighter" && tool !== "mosaic";
+}
+
 /** 塗りつぶし図形・パン・クロップでは太さ UI を出さない */
 export function shouldShowSizeControl(tool: Tool, shapeFilled: boolean): boolean {
   if (tool === "hand" || tool === "crop") return false;
   if ((tool === "rect" || tool === "ellipse") && shapeFilled) return false;
   return true;
+}
+
+/**
+ * プレビューの描き分け。実際の描画（draw.ts）に形を合わせる:
+ * - `square`  ハイライタは lineCap "square"
+ * - `text`    文字は左上を原点に描かれるのでキャレット表示
+ * - `block`   モザイクはブロック粒度
+ */
+export type PreviewShape = "circle" | "square" | "text" | "block";
+
+export function previewShape(tool: Tool): PreviewShape {
+  switch (tool) {
+    case "highlighter":
+      return "square";
+    case "text":
+      return "text";
+    case "mosaic":
+      return "block";
+    default:
+      return "circle";
+  }
 }
 
 /** カーソル下のブラシプレビュー直径（不要なら null） */

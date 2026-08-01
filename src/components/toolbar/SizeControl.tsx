@@ -1,11 +1,13 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { AnnotationColor, Tool } from "../../types/annotation";
 import {
   BRUSH_SIZE_MAX,
   BRUSH_SIZE_MIN,
   effectiveSizeFromBrush,
+  isSizeInPixels,
   sizeControlLabel,
 } from "../../lib/brushSize";
+import { SizePreviewPopover } from "./SizePreviewPopover";
 import { useLocalization } from "../../lib/localization";
 
 interface SizeControlProps {
@@ -15,86 +17,72 @@ interface SizeControlProps {
   onChange: (s: number) => void;
 }
 
-/** Snipping Tool 風: スライダー操作中に実効サイズを円／文字で見せる */
-function SizePreviewBubble({
-  tool,
-  size,
-  color,
-}: {
-  tool: Tool;
-  size: number;
-  color: AnnotationColor;
-}) {
-  const effective = effectiveSizeFromBrush(tool, size);
-  const visual = Math.min(effective, 64);
+/** キーボード操作にはポインタと違い「離した」瞬間がないので時間で閉じる */
+const KEYBOARD_PREVIEW_MS = 1200;
 
-  return (
-    <div
-      className="absolute left-1/2 top-full mt-2 z-50 -translate-x-1/2 pointer-events-none"
-      role="status"
-      aria-live="polite"
-    >
-      <div className="flex flex-col items-center gap-1.5 rounded-xl border border-tb-border bg-tb-raised/95 px-3 py-2.5 shadow-lg backdrop-blur-sm">
-        {tool === "text" ? (
-          <span
-            className="font-bold leading-none whitespace-nowrap"
-            style={{
-              color,
-              fontSize: Math.min(effective, 40),
-              fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
-            }}
-          >
-            Aa
-          </span>
-        ) : tool === "mosaic" ? (
-          <div
-            className="grid grid-cols-2 gap-px overflow-hidden rounded-sm"
-            style={{ width: visual, height: visual }}
-          >
-            <div className="bg-tb-text-dim" />
-            <div className="bg-tb-text" />
-            <div className="bg-tb-text" />
-            <div className="bg-tb-text-dim" />
-          </div>
-        ) : (
-          <div
-            className="rounded-full"
-            style={{
-              width: Math.max(4, visual),
-              height: Math.max(4, visual),
-              backgroundColor: tool === "highlighter" ? `${color}59` : color,
-              boxShadow: `0 0 0 1px rgba(255,255,255,0.15)`,
-            }}
-          />
-        )}
-        <span className="text-[10px] font-mono tabular-nums text-tb-text-sub">{effective}px</span>
-      </div>
-    </div>
-  );
-}
+type PreviewSource = "slider" | "field" | null;
 
 export function SizeControl({ tool, size, color, onChange }: SizeControlProps) {
   const { t } = useLocalization();
-  const [previewing, setPreviewing] = useState(false);
-  const effective = effectiveSizeFromBrush(tool, size);
-  const showEffectiveHint = effective !== size;
-  const label = sizeControlLabel(tool, t);
-  const pxHint = t("image pixels", "画像ピクセル");
+  const groupRef = useRef<HTMLDivElement>(null);
+  const timerRef = useRef<number>(0);
+  const [source, setSource] = useState<PreviewSource>(null);
 
+  const effective = effectiveSizeFromBrush(tool, size);
+  const inPixels = isSizeInPixels(tool);
+  const label = sizeControlLabel(tool, t);
+
+  const clearTimer = useCallback(() => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = 0;
+    }
+  }, []);
+
+  /**
+   * ドラッグ中は押している間だけ、キーボード操作は一定時間だけ出す。
+   * keydown の直後に change も飛ぶので、モードは ref に持って change 側で上書きしない。
+   */
+  const modeRef = useRef<"pointer" | "keyboard">("pointer");
+  const openFromSlider = useCallback(
+    (mode: "pointer" | "keyboard") => {
+      modeRef.current = mode;
+      clearTimer();
+      setSource("slider");
+      if (mode === "keyboard") {
+        timerRef.current = window.setTimeout(
+          () => setSource((s) => (s === "slider" ? null : s)),
+          KEYBOARD_PREVIEW_MS
+        );
+      }
+    },
+    [clearTimer]
+  );
+
+  // スライダーを離した／ウィンドウが背面に回ったら閉じる。
+  // 数値入力にフォーカスがある間は pointerup で閉じない（クリック直後に消えてしまう）
   useEffect(() => {
-    if (!previewing) return;
-    const end = () => setPreviewing(false);
+    if (source !== "slider") return;
+    const end = () => {
+      clearTimer();
+      setSource(null);
+    };
     window.addEventListener("pointerup", end);
     window.addEventListener("blur", end);
     return () => {
       window.removeEventListener("pointerup", end);
       window.removeEventListener("blur", end);
     };
-  }, [previewing]);
+  }, [source, clearTimer]);
+
+  useEffect(() => clearTimer, [clearTimer]);
+
+  const commit = (raw: number) =>
+    onChange(Math.max(BRUSH_SIZE_MIN, Math.min(BRUSH_SIZE_MAX, raw || BRUSH_SIZE_MIN)));
 
   return (
-    <div className="tool-group relative" title={t("Image pixels", "画像のピクセル単位")}>
-      <span className="text-[11px] font-medium text-tb-text-sub tracking-wide uppercase px-1">
+    <div ref={groupRef} className="tool-group relative">
+      <span className="px-1 text-[11px] font-medium tracking-wide text-tb-text-sub whitespace-nowrap">
         {label}
       </span>
       <input
@@ -102,13 +90,16 @@ export function SizeControl({ tool, size, color, onChange }: SizeControlProps) {
         min={BRUSH_SIZE_MIN}
         max={BRUSH_SIZE_MAX}
         value={size}
-        onPointerDown={() => setPreviewing(true)}
+        onPointerDown={() => openFromSlider("pointer")}
+        onKeyDown={() => openFromSlider("keyboard")}
         onChange={(e) => {
-          setPreviewing(true);
+          // すでに開いているなら閉じ方（pointerup 待ち／タイマー）を維持する
+          if (source === null) openFromSlider(modeRef.current);
           onChange(Number(e.target.value));
         }}
         className="slider-tb w-24"
-        aria-label={`${label}（${pxHint}）`}
+        aria-label={label}
+        aria-valuetext={`${effective}px`}
       />
       <div className="flex items-center gap-0.5">
         <input
@@ -116,29 +107,37 @@ export function SizeControl({ tool, size, color, onChange }: SizeControlProps) {
           min={BRUSH_SIZE_MIN}
           max={BRUSH_SIZE_MAX}
           value={size}
-          onFocus={() => setPreviewing(true)}
-          onBlur={() => setPreviewing(false)}
-          onChange={(e) => {
-            const v = Math.max(
-              BRUSH_SIZE_MIN,
-              Math.min(BRUSH_SIZE_MAX, Number(e.target.value) || BRUSH_SIZE_MIN)
-            );
-            onChange(v);
+          onFocus={() => {
+            clearTimer();
+            setSource("field");
           }}
+          // スライダーへ直接ドラッグすると pointerdown の後に blur が来る。
+          // すでにスライダー操作へ移っている場合は閉じない
+          onBlur={() => setSource((s) => (s === "field" ? null : s))}
+          onChange={(e) => commit(Number(e.target.value))}
           className="w-10 bg-tb-base text-tb-text text-[11px] font-mono tabular-nums text-center rounded-md border border-tb-border px-1 py-0.5 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           aria-label={t(`${label} value`, `${label}の数値`)}
         />
-        <span className="text-[11px] font-mono text-tb-text-dim">px</span>
-        {showEffectiveHint && (
+        {/* スライダー値がそのまま px のときだけ px を名乗る。
+            それ以外は倍率なので、実効サイズを唯一の px 表示にする */}
+        {inPixels ? (
+          <span className="text-[11px] font-mono text-tb-text-dim">px</span>
+        ) : (
           <span
-            className="text-[10px] font-mono text-tb-text-dim ml-0.5 whitespace-nowrap"
+            className="ml-0.5 text-[11px] font-mono tabular-nums text-tb-text-sub whitespace-nowrap"
             title={t("Actual draw size", "実際の描画サイズ")}
           >
-            → {effective}px
+            {effective}px
           </span>
         )}
       </div>
-      {previewing && <SizePreviewBubble tool={tool} size={size} color={color} />}
+      <SizePreviewPopover
+        anchorRef={groupRef}
+        open={source !== null}
+        tool={tool}
+        size={size}
+        color={color}
+      />
     </div>
   );
 }
