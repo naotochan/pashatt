@@ -252,12 +252,9 @@ export default function Overlay() {
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        if (modeRef.current === "window") {
-          resetToDefault();
-        } else {
-          await hideOverlay();
-          resetToDefault();
-        }
+        // モードに関わらずキャプチャ自体をキャンセルする
+        await hideOverlay();
+        resetToDefault();
       }
     };
     window.addEventListener("keydown", onKey);
@@ -353,9 +350,9 @@ export default function Overlay() {
       >
         {mode === "window"
           ? hoveredWin
-            ? `${hoveredWin.name}  ｜  ${t("Click: Capture", "クリック: キャプチャ")}  ｜  Esc: ${t("Back", "戻る")}`
-            : `${t("Select a window", "ウィンドウを選択")} (${windows.length})  ｜  ${t("Click: Capture", "クリック: キャプチャ")}  ｜  Esc: ${t("Back", "戻る")}`
-          : `${t("Drag: Region", "ドラッグ: 範囲選択")}  ｜  ${t("Click: Full screen", "クリック: 全画面")}  ｜  Space: ${t("Window select", "ウィンドウ選択")}  ｜  Esc: ${t("Close", "閉じる")}`}
+            ? `${hoveredWin.name}  ｜  ${t("Click: Capture", "クリック: キャプチャ")}  ｜  Esc: ${t("Cancel", "キャンセル")}`
+            : `${t("Select a window", "ウィンドウを選択")} (${windows.length})  ｜  ${t("Click: Capture", "クリック: キャプチャ")}  ｜  Esc: ${t("Cancel", "キャンセル")}`
+          : `${t("Drag: Region", "ドラッグ: 範囲選択")}  ｜  ${t("Click: Full screen", "クリック: 全画面")}  ｜  Space: ${t("Window select", "ウィンドウ選択")}  ｜  Esc: ${t("Cancel", "キャンセル")}`}
       </div>
     </div>
   );
