@@ -20,6 +20,18 @@ interface SizeControlProps {
 /** キーボード操作にはポインタと違い「離した」瞬間がないので時間で閉じる */
 const KEYBOARD_PREVIEW_MS = 1200;
 
+/** これ以外のキー（Tab や修飾キー単独）でプレビューを開かない */
+const ADJUST_KEYS = new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown",
+]);
+
 type PreviewSource = "slider" | "field" | null;
 
 export function SizeControl({ tool, size, color, onChange }: SizeControlProps) {
@@ -81,7 +93,7 @@ export function SizeControl({ tool, size, color, onChange }: SizeControlProps) {
     onChange(Math.max(BRUSH_SIZE_MIN, Math.min(BRUSH_SIZE_MAX, raw || BRUSH_SIZE_MIN)));
 
   return (
-    <div ref={groupRef} className="tool-group relative">
+    <div ref={groupRef} className="tool-group">
       <span className="px-1 text-[11px] font-medium tracking-wide text-tb-text-sub whitespace-nowrap">
         {label}
       </span>
@@ -91,7 +103,9 @@ export function SizeControl({ tool, size, color, onChange }: SizeControlProps) {
         max={BRUSH_SIZE_MAX}
         value={size}
         onPointerDown={() => openFromSlider("pointer")}
-        onKeyDown={() => openFromSlider("keyboard")}
+        onKeyDown={(e) => {
+          if (ADJUST_KEYS.has(e.key)) openFromSlider("keyboard");
+        }}
         onChange={(e) => {
           // すでに開いているなら閉じ方（pointerup 待ち／タイマー）を維持する
           if (source === null) openFromSlider(modeRef.current);

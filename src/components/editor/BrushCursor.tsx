@@ -44,19 +44,21 @@ export const BrushCursor = forwardRef<BrushCursorHandle, BrushCursorProps>(
 
     const bw = Math.max(borderWidth, 0.5);
     const size = Math.max(2, diameter);
-    const screenPx = diameter / bw;
-    const tiny = screenPx < TINY_SCREEN_PX;
+    // 画面上の実寸は borderWidth(=1/displayScale) で割る。クランプ後の bw を使うと
+    // 200% 超のズームで過小評価になり、大きいのに補助ドットが出てしまう
+    const tiny = diameter / borderWidth < TINY_SCREEN_PX;
 
     // 文字は左上を原点に描かれる（draw.ts textBaseline "top"）。
     // 円ではなく、行の高さぶんのキャレットで着地点を示す
     const isText = shape === "text";
     const radius = shape === "circle" ? "9999px" : 0;
 
+    // 外側 div の style は move()/hide() の専用領域にしておく。style prop を渡すと
+    // React の差分適用で transform/opacity が飛ぶ余地ができる
     return (
       <div
         ref={elRef}
-        className="pointer-events-none absolute left-0 top-0 opacity-0"
-        style={{ willChange: "transform" }}
+        className="pointer-events-none absolute left-0 top-0 opacity-0 will-change-transform"
         aria-hidden
       >
         <div
@@ -82,7 +84,6 @@ export const BrushCursor = forwardRef<BrushCursorHandle, BrushCursorProps>(
                   border: `${bw}px solid rgba(255,255,255,0.95)`,
                   boxShadow: `0 0 0 ${bw}px rgba(0,0,0,0.55), inset 0 0 0 ${bw}px rgba(0,0,0,0.55)`,
                   backgroundColor: `${color}${shape === "square" ? "59" : "2E"}`,
-                  boxSizing: "border-box",
                 }
           }
         />

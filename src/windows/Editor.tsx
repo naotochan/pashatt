@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { onCaptureComplete, getSettings, saveSettings, notifyEditorHidden } from "../lib/ipc";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Toolbar from "../components/Toolbar";
@@ -52,6 +52,8 @@ export default function Editor() {
   const [favoriteColors, setFavoriteColors] = useState<string[]>([]);
   const [cornerRadius, setCornerRadius] = useState(0);
   const brushCursorRef = useRef<BrushCursorHandle>(null);
+  /** 再マウントを跨いでカーソル位置を保つ（BrushCursor は DOM を直接動かす） */
+  const lastCursorPosRef = useRef<PointLike | null>(null);
 
   const history = useEditorHistory();
   const panZoom = useCanvasPanZoom({
@@ -213,18 +215,21 @@ export default function Editor() {
   const showBrushCursor = previewDiameter !== null && !eyedropper.isPickingColor && !pendingText;
 
   /** カーソルプレビューは再レンダを挟まず DOM を直接動かす */
-  const moveBrushCursor = useCallback(
-    (pos: PointLike | null) => {
-      const handle = brushCursorRef.current;
-      if (!handle) return;
-      if (pos) handle.move(pos.x, pos.y);
-      else handle.hide();
-    },
-    []
-  );
+  const moveBrushCursor = useCallback((pos: PointLike | null) => {
+    lastCursorPosRef.current = pos;
+    const handle = brushCursorRef.current;
+    if (!handle) return;
+    if (pos) handle.move(pos.x, pos.y);
+    else handle.hide();
+  }, []);
 
-  useEffect(() => {
-    if (!showBrushCursor) moveBrushCursor(null);
+  // スポイト確定やテキスト確定でこのカーソルは作り直される。新しい DOM は
+  // 未配置・不可視なので、次の mousemove を待たず最後の位置へ復帰させる
+  // （キャンバスの CSS cursor は none なので、待つと何も見えない時間ができる）
+  useLayoutEffect(() => {
+    if (showBrushCursor && lastCursorPosRef.current) {
+      moveBrushCursor(lastCursorPosRef.current);
+    }
   }, [showBrushCursor, moveBrushCursor]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -495,7 +500,9 @@ export default function Editor() {
                       ? panZoom.isPanning
                         ? "grabbing"
                         : "grab"
-                      : previewDiameter !== null
+                      : // ブラシプレビューを出すときだけ OS カーソルを隠す。
+                        // 条件がずれるとテキスト入力中などにカーソルが完全に消える
+                        showBrushCursor
                         ? "none"
                         : "crosshair",
                 }}

@@ -7,20 +7,32 @@ import { useLocalization } from "../../lib/localization";
 /** プレビュー板の一辺。ここに収まらない実効サイズは縮小して倍率を出す */
 const PLATE = 88;
 const SWATCH_MAX = 72;
+/** "Aa" は font-size より横に広がるので、板からはみ出さないよう控えめに取る */
+const TEXT_SWATCH_MAX = 48;
 /** 板と同系色の描画色でも輪郭が出るよう、スウォッチに白黒の細リングを回す */
 const SWATCH_RING = "0 0 0 1px rgba(0,0,0,0.45), 0 0 0 2px rgba(255,255,255,0.35)";
-/** ポップオーバーの概算幅。ビューポート端でのクランプにだけ使う */
-const POPOVER_WIDTH = PLATE + 24;
+/** ポップオーバーの概算幅（板 + p-3 の左右 + 枠線）。端でのクランプにだけ使う */
+const POPOVER_WIDTH = PLATE + 26;
 
 function clamp(v: number, min: number, max: number) {
   return Math.max(min, Math.min(max, v));
+}
+
+/** 形状ごとのスウォッチ上限。ここに収まらなければ縮小して倍率を出す */
+function swatchMax(shape: ReturnType<typeof previewShape>): number {
+  return shape === "text" ? TEXT_SWATCH_MAX : SWATCH_MAX;
 }
 
 /**
  * ツールバー行は `overflow-x: auto` なので子要素の絶対配置は縦にクリップされる。
  * body へポータルし、アンカーの実座標から fixed で置く。
  */
-function useAnchorPosition(anchorRef: RefObject<HTMLElement | null>, open: boolean) {
+function useAnchorPosition(
+  anchorRef: RefObject<HTMLElement | null>,
+  open: boolean,
+  /** 実効サイズの桁が増えるとアンカー幅が変わるので、開いたまま測り直す */
+  remeasureKey: unknown
+) {
   const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
 
   useLayoutEffect(() => {
@@ -45,7 +57,7 @@ function useAnchorPosition(anchorRef: RefObject<HTMLElement | null>, open: boole
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [anchorRef, open]);
+  }, [anchorRef, open, remeasureKey]);
 
   return pos;
 }
@@ -133,11 +145,11 @@ export function SizePreviewPopover({
   color,
 }: SizePreviewPopoverProps) {
   const { t } = useLocalization();
-  const pos = useAnchorPosition(anchorRef, open);
+  const effective = effectiveSizeFromBrush(tool, size);
+  const pos = useAnchorPosition(anchorRef, open, effective);
   if (!open || !pos) return null;
 
-  const effective = effectiveSizeFromBrush(tool, size);
-  const scale = Math.min(1, SWATCH_MAX / effective);
+  const scale = Math.min(1, swatchMax(previewShape(tool)) / effective);
   const scaled = scale < 1;
 
   return createPortal(
