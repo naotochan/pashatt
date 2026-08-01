@@ -233,6 +233,8 @@ export default function Overlay() {
     schedulePaint();
     try {
       const wins = await getWindowList();
+      // 取得待ちの間にキャンセルされていたら結果を捨てる
+      if (modeRef.current !== "window") return;
       windowsRef.current = wins;
       setWindows(wins);
     } catch {
@@ -252,9 +254,14 @@ export default function Overlay() {
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        // モードに関わらずキャプチャ自体をキャンセルする
-        await hideOverlay();
+        // モードに関わらずキャプチャ自体をキャンセルする。
+        // hideOverlay の応答待ちに mouseup が走ってキャプチャされないよう、先に状態を落とす
         resetToDefault();
+        try {
+          await hideOverlay();
+        } catch {
+          /* ignore */
+        }
       }
     };
     window.addEventListener("keydown", onKey);
