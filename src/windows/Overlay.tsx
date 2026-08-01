@@ -233,6 +233,8 @@ export default function Overlay() {
     schedulePaint();
     try {
       const wins = await getWindowList();
+      // 取得待ちの間にキャンセルされていたら結果を捨てる
+      if (modeRef.current !== "window") return;
       windowsRef.current = wins;
       setWindows(wins);
     } catch {
@@ -252,11 +254,13 @@ export default function Overlay() {
       }
       if (e.key === "Escape") {
         e.preventDefault();
-        if (modeRef.current === "window") {
-          resetToDefault();
-        } else {
+        // モードに関わらずキャプチャ自体をキャンセルする。
+        // hideOverlay の応答待ちに mouseup が走ってキャプチャされないよう、先に状態を落とす
+        resetToDefault();
+        try {
           await hideOverlay();
-          resetToDefault();
+        } catch {
+          /* ignore */
         }
       }
     };
@@ -353,9 +357,9 @@ export default function Overlay() {
       >
         {mode === "window"
           ? hoveredWin
-            ? `${hoveredWin.name}  ｜  ${t("Click: Capture", "クリック: キャプチャ")}  ｜  Esc: ${t("Back", "戻る")}`
-            : `${t("Select a window", "ウィンドウを選択")} (${windows.length})  ｜  ${t("Click: Capture", "クリック: キャプチャ")}  ｜  Esc: ${t("Back", "戻る")}`
-          : `${t("Drag: Region", "ドラッグ: 範囲選択")}  ｜  ${t("Click: Full screen", "クリック: 全画面")}  ｜  Space: ${t("Window select", "ウィンドウ選択")}  ｜  Esc: ${t("Close", "閉じる")}`}
+            ? `${hoveredWin.name}  ｜  ${t("Click: Capture", "クリック: キャプチャ")}  ｜  Esc: ${t("Cancel", "キャンセル")}`
+            : `${t("Select a window", "ウィンドウを選択")} (${windows.length})  ｜  ${t("Click: Capture", "クリック: キャプチャ")}  ｜  Esc: ${t("Cancel", "キャンセル")}`
+          : `${t("Drag: Region", "ドラッグ: 範囲選択")}  ｜  ${t("Click: Full screen", "クリック: 全画面")}  ｜  Space: ${t("Window select", "ウィンドウ選択")}  ｜  Esc: ${t("Cancel", "キャンセル")}`}
       </div>
     </div>
   );
