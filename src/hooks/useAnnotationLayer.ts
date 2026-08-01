@@ -58,6 +58,10 @@ export function useAnnotationLayer({
       ctx.clearRect(0, 0, annCanvas.width, annCanvas.height);
       ctx.drawImage(base, 0, 0);
 
+      drawAnnotation(ctx, ann, 1, imageCanvasRef.current);
+
+      // モザイクは結果が見えないと粒度を選べないので、実際のモザイクを出したうえで
+      // 範囲を白黒の破線で示す（どんな画像の上でも読める）
       if (ann.tool === "mosaic") {
         const [s, e] = ann.points;
         const x = Math.min(s.x, e.x);
@@ -66,16 +70,15 @@ export function useAnnotationLayer({
         const h = Math.abs(e.y - s.y);
         const mul = sizeMulRef.current;
         ctx.save();
-        ctx.strokeStyle = "rgba(59, 130, 246, 0.95)";
-        ctx.fillStyle = "rgba(59, 130, 246, 0.1)";
-        ctx.lineWidth = Math.max(1, 2 * mul);
-        ctx.setLineDash([6 * mul, 4 * mul]);
-        ctx.fillRect(x, y, w, h);
+        ctx.lineWidth = Math.max(1, mul);
+        ctx.setLineDash([5 * mul, 4 * mul]);
+        ctx.strokeStyle = "rgba(0,0,0,0.65)";
+        ctx.strokeRect(x, y, w, h);
+        ctx.lineDashOffset = 5 * mul;
+        ctx.strokeStyle = "rgba(255,255,255,0.95)";
         ctx.strokeRect(x, y, w, h);
         ctx.restore();
-        return;
       }
-      drawAnnotation(ctx, ann, 1, imageCanvasRef.current);
     },
     [ensureBaseLayer, annotationCanvasRef, imageCanvasRef, sizeMulRef]
   );

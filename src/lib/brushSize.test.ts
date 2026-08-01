@@ -6,7 +6,9 @@ import {
   brushPreviewDiameter,
   effectiveSizeFromBrush,
   highlighterWidthFromBrush,
+  isSizeInPixels,
   mosaicBlockFromBrush,
+  previewShape,
   shouldShowSizeControl,
   textSizeFromBrush,
 } from "./brushSize";
@@ -42,5 +44,22 @@ describe("brushSize", () => {
     expect(brushPreviewDiameter("hand", 4, false)).toBeNull();
     expect(brushPreviewDiameter("rect", 4, true)).toBeNull();
     expect(brushPreviewDiameter("mosaic", 4, false)).toBeNull();
+  });
+
+  it("only calls the slider value px when it really is px", () => {
+    expect(isSizeInPixels("pen")).toBe(true);
+    expect(isSizeInPixels("arrow")).toBe(true);
+    expect(isSizeInPixels("highlighter")).toBe(false);
+    expect(isSizeInPixels("text")).toBe(false);
+    expect(isSizeInPixels("mosaic")).toBe(false);
+  });
+
+  it("matches preview shapes to how each tool actually draws", () => {
+    expect(previewShape("pen")).toBe("circle");
+    expect(previewShape("arrow")).toBe("circle");
+    // lineCap "square"
+    expect(previewShape("highlighter")).toBe("square");
+    expect(previewShape("text")).toBe("text");
+    expect(previewShape("mosaic")).toBe("block");
   });
 });

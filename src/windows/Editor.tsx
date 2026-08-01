@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, useCallback, useMemo } from "react";
 import { onCaptureComplete, getSettings, saveSettings, notifyEditorHidden } from "../lib/ipc";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import Toolbar from "../components/Toolbar";
-import { BrushCursor } from "../components/editor/BrushCursor";
+import { BrushCursor, type BrushCursorHandle } from "../components/editor/BrushCursor";
 import { TextInputOverlay } from "../components/editor/TextInputOverlay";
 import type { Tool, AnnotationColor, ArrowStyle, Annotation, AnnotationTool } from "../types/annotation";
 import { isShapeTool } from "../types/annotation";
 import {
   BRUSH_SIZE_DEFAULT,
   brushPreviewDiameter,
-  effectiveSizeFromBrush,
+  previewShape,
   shouldShowSizeControl,
   textSizeFromBrush,
 } from "../lib/brushSize";
@@ -51,7 +51,9 @@ export default function Editor() {
   const [imageFormat, setImageFormat] = useState<"png" | "jpeg">("png");
   const [favoriteColors, setFavoriteColors] = useState<string[]>([]);
   const [cornerRadius, setCornerRadius] = useState(0);
-  const [cursorPos, setCursorPos] = useState<PointLike | null>(null);
+  const brushCursorRef = useRef<BrushCursorHandle>(null);
+  /** 再マウントを跨いでカーソル位置を保つ（BrushCursor は DOM を直接動かす） */
+  const lastCursorPosRef = useRef<PointLike | null>(null);
 
   const history = useEditorHistory();
   const panZoom = useCanvasPanZoom({
@@ -210,6 +212,25 @@ export default function Editor() {
   }, [history.handleUndo, history.handleRedo]);
 
   const previewDiameter = brushPreviewDiameter(currentTool, currentSize, shapeFilled);
+  const showBrushCursor = previewDiameter !== null && !eyedropper.isPickingColor && !pendingText;
+
+  /** カーソルプレビューは再レンダを挟まず DOM を直接動かす */
+  const moveBrushCursor = useCallback((pos: PointLike | null) => {
+    lastCursorPosRef.current = pos;
+    const handle = brushCursorRef.current;
+    if (!handle) return;
+    if (pos) handle.move(pos.x, pos.y);
+    else handle.hide();
+  }, []);
+
+  // スポイト確定やテキスト確定でこのカーソルは作り直される。新しい DOM は
+  // 未配置・不可視なので、次の mousemove を待たず最後の位置へ復帰させる
+  // （キャンバスの CSS cursor は none なので、待つと何も見えない時間ができる）
+  useLayoutEffect(() => {
+    if (showBrushCursor && lastCursorPosRef.current) {
+      moveBrushCursor(lastCursorPosRef.current);
+    }
+  }, [showBrushCursor, moveBrushCursor]);
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (eyedropper.isPickingColor) {
@@ -244,7 +265,6 @@ export default function Editor() {
     layer.ensureBaseLayer();
     layer.isDrawingRef.current = true;
     layer.drawingAnnRef.current = ann;
-    setCursorPos(null);
     layer.paintDragPreview(ann);
   };
 
@@ -255,11 +275,8 @@ export default function Editor() {
     }
 
     const pos = layer.getPos(e);
-    if (previewDiameter !== null && !layer.isDrawingRef.current) {
-      setCursorPos(pos);
-    } else if (previewDiameter === null) {
-      setCursorPos(null);
-    }
+    // 描画中もカーソルは出したまま（CSS cursor は none なので消すと完全に見失う）
+    moveBrushCursor(showBrushCursor ? pos : null);
 
     if (panZoom.isPanning && currentTool === "hand") {
       panZoom.movePan(e.clientX, e.clientY);
@@ -317,8 +334,13 @@ export default function Editor() {
     history.pushHistory([...history.annotationsRef.current, finalAnn]);
   };
 
+  /** 入場した瞬間に出す。最初の mousemove を待つとカーソルが無い時間ができる */
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    if (showBrushCursor) moveBrushCursor(layer.getPos(e));
+  };
+
   const handleMouseLeave = () => {
-    setCursorPos(null);
+    moveBrushCursor(null);
   };
 
   const handleTextSubmit = useCallback(() => {
@@ -478,23 +500,25 @@ export default function Editor() {
                       ? panZoom.isPanning
                         ? "grabbing"
                         : "grab"
-                      : previewDiameter !== null
+                      : // ブラシプレビューを出すときだけ OS カーソルを隠す。
+                        // 条件がずれるとテキスト入力中などにカーソルが完全に消える
+                        showBrushCursor
                         ? "none"
                         : "crosshair",
                 }}
                 onMouseDown={handleMouseDown}
                 onMouseMove={handleMouseMove}
                 onMouseUp={handleMouseUp}
+                onMouseEnter={handleMouseEnter}
                 onMouseLeave={handleMouseLeave}
               />
-              {cursorPos && previewDiameter !== null && !eyedropper.isPickingColor && !pendingText && (
+              {showBrushCursor && (
                 <BrushCursor
-                  x={cursorPos.x}
-                  y={cursorPos.y}
+                  ref={brushCursorRef}
                   diameter={previewDiameter}
                   color={currentColor}
+                  shape={previewShape(currentTool)}
                   borderWidth={panZoom.sizeMul}
-                  soft={currentTool === "highlighter" || currentTool === "text"}
                 />
               )}
               {pendingText && (
@@ -519,7 +543,11 @@ export default function Editor() {
       {eyedropper.isPickingColor && eyedropper.hoverColor && (
         <div
           className="fixed pointer-events-none z-50 flex items-center gap-2 bg-tb-raised text-tb-text text-[11px] px-2.5 py-1.5 rounded-lg shadow-lg border border-tb-border"
-          style={{ left: eyedropper.hoverPos.x + 18, top: eyedropper.hoverPos.y - 10 }}
+          style={{
+            // 右端・下端では反対側に逃がす（画面外に出ると色が読めない）
+            left: Math.min(eyedropper.hoverPos.x + 18, window.innerWidth - 108),
+            top: Math.min(Math.max(eyedropper.hoverPos.y - 10, 8), window.innerHeight - 44),
+          }}
         >
           <div
             className="w-4 h-4 rounded-sm border border-tb-border flex-shrink-0"
@@ -536,11 +564,6 @@ export default function Editor() {
             <span>
               {imgSize.w} <span className="opacity-40">x</span> {imgSize.h}
             </span>
-            {showSize && (
-              <span className="text-tb-text-dim">
-                {effectiveSizeFromBrush(currentTool, currentSize)}px
-              </span>
-            )}
             <span className="bg-tb-raised rounded px-1.5 py-0.5 text-tb-text-sub">
               {Math.round(panZoom.displayScale * 100)}%
             </span>
